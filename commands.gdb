@@ -42,3 +42,4 @@ n 14
 p cpus[$tp]->proc->name 
 #此时进程已经切换为init
 s
+da
