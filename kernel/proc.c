@@ -267,11 +267,40 @@ int fork(void) {
   return pid;
 }
 
+
+
+
+//自己定义的，从enum到字符串的映射
+
+char* enum2char(enum procstate state)
+{
+    switch(state){
+      case UNUSED:
+      return "UNUSED";
+      break;
+      case SLEEPING:
+      return "SLEEPING";
+      break;
+      case RUNNABLE:
+      return "RUNNABLE";
+      break;
+      case RUNNING:
+      return "RUNNING";
+      break;
+      case ZOMBIE:
+      return "ZOMBIE";
+      break;
+      default:return "UNUSED";
+    }
+} 
+
+
+
 // Pass p's abandoned children to init.
 // Caller must hold p->lock.
 void reparent(struct proc *p) {
   struct proc *pp;
-
+  int i=0;//子进程计数变量
   for (pp = proc; pp < &proc[NPROC]; pp++) {
     // this code uses pp->parent without holding pp->lock.
     // acquiring the lock first could cause a deadlock
@@ -281,6 +310,8 @@ void reparent(struct proc *p) {
       // pp->parent can't change between the check and the acquire()
       // because only the parent changes it, and we're the parent.
       acquire(&pp->lock);
+      //在每个子进程回收之前打印其信息
+      exit_info("proc %d exit, child %d, pid %d, name %s, state %s\n",p->pid,i++,pp->pid,pp->name,enum2char(pp->state));
       pp->parent = initproc;
       // we should wake up init here, but that would require
       // initproc->lock, which would be a deadlock, since we hold
@@ -330,6 +361,8 @@ void exit(int status) {
   // as anything else.
   acquire(&p->lock);
   struct proc *original_parent = p->parent;
+  //获取锁的同时进行打印
+  exit_info("proc %d exit, parent pid %d, name %s, state %s\n",p->pid,p->parent->pid,p->parent->name,enum2char(p->parent->state));
   release(&p->lock);
 
   // we need the parent's lock in order to wake it up from wait().
@@ -337,7 +370,6 @@ void exit(int status) {
   acquire(&original_parent->lock);
 
   acquire(&p->lock);
-
   // Give any children to init.
   reparent(p);
 
