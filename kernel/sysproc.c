@@ -21,7 +21,7 @@ uint64 sys_fork(void) { return fork(); }
 uint64 sys_wait(void) {
   uint64 p;
   if (argaddr(0, &p) < 0) return -1;
-  return wait(p);
+  return wait(p,myproc()->trapframe->a1);
 }
 
 uint64 sys_sbrk(void) {
