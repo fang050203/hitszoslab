@@ -25,6 +25,8 @@ int sleep(int);
 int uptime(void);
 int rename(const char*);
 
+void yield(void);//lab2定义yield函数
+
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);

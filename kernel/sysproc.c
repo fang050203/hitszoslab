@@ -81,3 +81,30 @@ uint64 sys_rename(void) {
   p->name[len] = '\0';
   return 0;
 }
+
+
+//lab2添加
+uint64 sys_yield(void){
+  //获取当前正在执行的进程PCB
+  struct proc *p=myproc();
+  //打印出该进程对应的内核线程在进行上下文切换时，上下文被保存到的地址区间
+  printf("Save the context of the process to the memory region from address %p to %p\n", &p->context,&(p->context)+1);
+  //打印出该进程的用户态陷入内核态时PC的值
+  printf("Current running process pid is %d and user pc is %p\n", p->pid, p->trapframe->epc);
+  //根据调度器的工作方式模拟一次调度，找到下一个RUNNABLE的进程，同样打印相关信息
+  struct proc *pr=p;//临时查找进程指针
+  int i=0;//循环变量
+  for (i=0;i<NPROC;i++) {
+  pr=proc+(p-proc+i)%NPROC;//
+    acquire(&pr->lock);//获取进程锁，保持互斥访问
+    if (pr->state == RUNNABLE) {//查找到第一个符合条件的进程
+      release(&pr->lock);//释放锁
+      break;//退出
+    }
+    release(&pr->lock);
+  }
+  printf("Next runnable process pid is %d and user pc is %p\n", pr->pid,pr->trapframe->epc);
+  //然后将当前进程挂起
+  yield();
+  return 0;
+}
