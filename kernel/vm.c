@@ -251,6 +251,7 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 void
 freewalk(pagetable_t pagetable)
 {
+
   // there are 2^9 = 512 PTEs in a page table.
   for(int i = 0; i < 512; i++){
     pte_t pte = pagetable[i];

@@ -18,23 +18,31 @@ struct run {
   struct run *next;
 };
 
-struct {
+struct kmem{//修改为结构体名称
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+};
+struct kmem kmems[NCPU];//为每个CPU分配一个freelist和锁
+
+
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  for(int i=0;i<NCPU;i++)
+  {
+    //都命名为同一个名字kmem 
+    initlock(&kmems[i].lock, "kmem");
+  }
   freerange(end, (void*)PHYSTOP);
 }
 
-void
+void//把空闲内存页加入到链表内
 freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
+  //循环分配内存
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
     kfree(p);
 }
@@ -43,10 +51,15 @@ freerange(void *pa_start, void *pa_end)
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
 // initializing the allocator; see kinit above.)
-void
-kfree(void *pa)
+void//释放指定内存页然后加入到freelist
+kfree(void *pa)//传入调用的cpuid
 {
   struct run *r;
+
+   //获取cpuid
+  push_off();
+  int id=cpuid();
+  pop_off();
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
@@ -56,10 +69,10 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  acquire(&kmems[id].lock);
+  r->next = kmems[id].freelist;
+  kmems[id].freelist = r;
+  release(&kmems[id].lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -69,12 +82,39 @@ void *
 kalloc(void)
 {
   struct run *r;
+  //安全获取cpuid
+  push_off();
+  int id=cpuid();
+  pop_off();
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+  acquire(&kmems[id].lock);
+  r = kmems[id].freelist;
+  if(r)//当当前所需cpu有空闲内存块时
+  {
+    kmems[id].freelist = r->next;
+    release(&kmems[id].lock);
+  }
+  else{
+    //释放当前cpu的kmem锁
+    release(&kmems[id].lock);    
+    for(int i =1;i<NCPU;i++)
+    {
+      //先获取锁
+      acquire(&kmems[(id+i)%NCPU].lock);
+      struct kmem *nextmem=&kmems[(id+i)%NCPU];
+      struct spinlock* nextlock=&kmems[(id+i)%NCPU].lock;
+      //假如有空闲页
+      if(nextmem->freelist)
+      {
+        r=nextmem->freelist;
+        nextmem->freelist = r->next;
+        release(nextlock);
+        break;
+      }
+      //无论如何都要释放锁
+      release(nextlock);
+    }
+  }
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
