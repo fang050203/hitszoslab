@@ -15,6 +15,63 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[];  // trampoline.S
 
+
+
+//为了方便输出，不使用递归
+void walkpgtbl(pagetable_t pgtbl)
+{
+  //遍历每一个页表项
+  for(int i =0; i < 512 ; i++)
+  {
+    //获取每一个页表
+    pte_t pte = pgtbl[i];
+    if((pte & PTE_V) && (pte & (PTE_R | PTE_X | PTE_W )) == 0)
+    {
+      printf("||idx: %d: pa: %p, flags: ----\n",i,PTE2PA(pte));
+      for(int j =0 ; j< 512 ; j++)
+      {
+        pte_t pte1 = ((uint64*)(PTE2PA(pte)))[j];
+        if( (pte1 & PTE_V) && (pte1 & (PTE_R | PTE_X | PTE_W)) == 0)
+        {
+          printf("||   ||idx: %d: pa: %p, flags: ----\n",j,PTE2PA(pte1));
+          for(int k =0 ;k<512; k++)
+          {
+            pte_t pte2 = ((uint64*)(PTE2PA(pte1)))[k];
+            if( pte2 & PTE_V)
+            {
+              //根据ijk计算虚拟地址
+              uint64 va = ((uint64)i << 30) | ((uint64)j << 21) | ((uint64)k << 12);
+              //应该就是叶子表项
+              char s[] ="----";
+              s[0] = PTE_R & pte2 ? 'r' : '-';
+              s[1] = PTE_W & pte2 ? 'w' : '-';
+              s[2] = PTE_X & pte2 ? 'x' : '-';
+              s[3] = PTE_U & pte2 ? 'u' : '-';
+              printf("||   ||   ||idx: %d: va: %p -> pa: %p, flags: %s\n",k,va,PTE2PA(pte2),s);
+            }
+          }
+        }
+      }
+    }
+  }
+  return;
+}
+
+
+//实现打印页表函数
+
+void vmprint(pagetable_t pgtbl)
+{
+  //先打印页表指针信息
+  printf("page table %p\n", pgtbl);
+  //传入一个参数，标志现在处于第几级页表
+  walkpgtbl(pgtbl);
+  return;
+}
+
+
+
+
 /*
  * create a direct-map page table for the kernel.
  */
