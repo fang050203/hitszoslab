@@ -12,6 +12,10 @@ struct proc proc[NPROC];
 
 struct proc *initproc;
 
+//一些需要用到的变量和函数
+extern pagetable_t kernel_pagetable;
+extern pagetable_t kvminit_new();
+
 int nextpid = 1;
 struct spinlock pid_lock;
 
@@ -37,9 +41,31 @@ void procinit(void) {
     uint64 va = KSTACK((int)(p - proc));
     kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
     p->kstack = va;
+    //把pa拷贝到PCB的kstack_pa中
+    p->kstack_pa = (uint64)pa;
   }
   kvminithart();
 }
+
+
+//自己定义的内核页表释放函数
+void my_free(pagetable_t pgtbl)
+{
+  //释放内核页表
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pgtbl[i];
+    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      my_free((pagetable_t)child);
+      pgtbl[i] = 0;
+    } /*else if (pte & PTE_V) {
+      panic("freewalk: leaf");
+    }*/
+  }
+  kfree((void *)pgtbl);
+}
+
 
 // Must be called with interrupts disabled,
 // to prevent race with process being moved
@@ -110,7 +136,10 @@ found:
     release(&p->lock);
     return 0;
   }
-
+  //新建进程的内核页表
+  p->k_pagetable = kvminit_new();
+  //将内核栈物理地址映射到内核栈页表
+  if (mappages(p->k_pagetable, p->kstack, PGSIZE, p->kstack_pa, PTE_R | PTE_W) != 0) panic("kvmmap");
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -136,6 +165,8 @@ static void freeproc(struct proc *p) {
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  //进入内核页表释放函数
+  my_free(p->k_pagetable);
 }
 
 // Create a user page table for a given process,
@@ -430,6 +461,10 @@ void scheduler(void) {
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        //载入该进程的内核页表
+        w_satp(MAKE_SATP(p->k_pagetable));//写入页表寄存器
+        sfence_vma();//刷新TLB
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
@@ -442,6 +477,9 @@ void scheduler(void) {
     }
 #if !defined(LAB_FS)
     if (found == 0) {
+      //如果一个都没找到
+      w_satp(MAKE_SATP(kernel_pagetable));//写入页表寄存器
+      sfence_vma();//刷新TLB
       intr_on();
       asm volatile("wfi");
     }

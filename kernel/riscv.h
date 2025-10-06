@@ -1,3 +1,7 @@
+#ifndef __RISCV_H__
+#define __RISCV_H__
+//防止重复定义
+
 // which hart (core) is this?
 static inline uint64
 r_mhartid()
@@ -365,3 +369,8 @@ sfence_vma()
 
 typedef uint64 pte_t;
 typedef uint64 *pagetable_t; // 512 PTEs
+
+
+
+
+#endif
