@@ -159,6 +159,7 @@ int             uartgetc(void);
 
 // vm.c
 void            vmprint(pagetable_t pgtbl);
+void            sync_pagetable(pagetable_t pagetable, pagetable_t k_pagetable,uint64 start, uint64 sz);
 void            kvminit(void);
 void            kvminithart(void);
 uint64          kvmpa(uint64);
@@ -181,6 +182,11 @@ int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             test_pagetable();
 
+
+//在def中添加
+//vmcopyin.c
+int copyin_new(pagetable_t, char* , uint64, uint64);
+int copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
 // plic.c
 void            plicinit(void);
 void            plicinithart(void);

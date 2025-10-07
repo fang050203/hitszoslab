@@ -57,14 +57,17 @@ void my_free(pagetable_t pgtbl)
     if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0) {
       // this PTE points to a lower-level page table.
       uint64 child = PTE2PA(pte);
-      my_free((pagetable_t)child);
       pgtbl[i] = 0;
-    } /*else if (pte & PTE_V) {
-      panic("freewalk: leaf");
-    }*/
+      my_free((pagetable_t)child);
+    } else if (pte & PTE_V) {
+      //pgtbl[i] = 0;
+    }
   }
   kfree((void *)pgtbl);
 }
+
+
+
 
 
 // Must be called with interrupts disabled,
@@ -140,6 +143,8 @@ found:
   p->k_pagetable = kvminit_new();
   //将内核栈物理地址映射到内核栈页表
   if (mappages(p->k_pagetable, p->kstack, PGSIZE, p->kstack_pa, PTE_R | PTE_W) != 0) panic("kvmmap");
+  //进行映射
+  //sync_pagetable(p->pagetable,p->k_pagetable, p->sz);
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -157,6 +162,9 @@ static void freeproc(struct proc *p) {
   p->trapframe = 0;
   if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+  //正确释放内核栈
+  if (p->k_pagetable) my_free(p->k_pagetable);
+  p->k_pagetable = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -165,8 +173,6 @@ static void freeproc(struct proc *p) {
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
-  //进入内核页表释放函数
-  my_free(p->k_pagetable);
 }
 
 // Create a user page table for a given process,
@@ -227,7 +233,8 @@ void userinit(void) {
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
-
+  //也要进行映射
+  sync_pagetable(p->pagetable,p->k_pagetable,0, p->sz);
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
@@ -247,8 +254,13 @@ int growproc(int n) {
     if ((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    //添加映射,如果n大于0
+    sync_pagetable(p->pagetable,p->k_pagetable,sz - n, sz);
   } else if (n < 0) {
+    //记录原始大小
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    //解除映射的代码，似乎暂时不用加
+    //uvmunmap(p->k_pagetable,PGROUNDUP(origin_sz),(PGROUNDUP(sz)-PGROUNDUP(sz))/PGSIZE,0);
   }
   p->sz = sz;
   return 0;
@@ -274,6 +286,9 @@ int fork(void) {
   }
   np->sz = p->sz;
 
+  sync_pagetable(np->pagetable,np->k_pagetable,0, np->sz);
+
+
   np->parent = p;
 
   // copy saved user registers.
@@ -292,6 +307,9 @@ int fork(void) {
   pid = np->pid;
 
   np->state = RUNNABLE;
+
+  //添加映射关系
+  sync_pagetable(np->pagetable,np->k_pagetable,0, np->sz);
 
   release(&np->lock);
 
@@ -466,7 +484,8 @@ void scheduler(void) {
         sfence_vma();//刷新TLB
 
         swtch(&c->context, &p->context);
-
+        //重新切换回全局内核页表
+        kvminithart();
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
@@ -478,8 +497,8 @@ void scheduler(void) {
 #if !defined(LAB_FS)
     if (found == 0) {
       //如果一个都没找到
-      w_satp(MAKE_SATP(kernel_pagetable));//写入页表寄存器
-      sfence_vma();//刷新TLB
+      //w_satp(MAKE_SATP(kernel_pagetable));//写入页表寄存器
+      //sfence_vma();//刷新TLB
       intr_on();
       asm volatile("wfi");
     }

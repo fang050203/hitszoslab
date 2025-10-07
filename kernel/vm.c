@@ -134,7 +134,6 @@ pagetable_t kvminit_new() {
 }
 
 
-
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
 void kvminithart() {
@@ -406,7 +405,7 @@ int copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len) {
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
 int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len) {
-  uint64 n, va0, pa0;
+  /*uint64 n, va0, pa0;
 
   while (len > 0) {
     va0 = PGROUNDDOWN(srcva);
@@ -420,7 +419,12 @@ int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len) {
     dst += n;
     srcva = va0 + PGSIZE;
   }
-  return 0;
+  return 0;*/
+  w_sstatus(r_sstatus() | SSTATUS_SUM);
+  //直接调用copyin_new
+  int i = copyin_new(pagetable,dst,srcva,len);
+  w_sstatus(r_sstatus() & ~SSTATUS_SUM);
+  return i;
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -428,7 +432,7 @@ int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len) {
 // until a '\0', or max.
 // Return 0 on success, -1 on error.
 int copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max) {
-  uint64 n, va0, pa0;
+  /*uint64 n, va0, pa0;
   int got_null = 0;
 
   while (got_null == 0 && max > 0) {
@@ -459,8 +463,33 @@ int copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max) {
     return 0;
   } else {
     return -1;
-  }
+  }*/
+  w_sstatus(r_sstatus() | SSTATUS_SUM);
+  //直接调用copyin_new
+  int i = copyinstr_new(pagetable,dst,srcva,max);
+  w_sstatus(r_sstatus() & ~SSTATUS_SUM);
+  return i;
 }
+
+
+
+//新定义函数，用于把进程的用户页表映射到内核页表
+void sync_pagetable(pagetable_t pagetable, pagetable_t k_pagetable,uint64 start,uint64 sz)
+{
+  for(uint64 i =start; i < sz; i+=PGSIZE)
+  {
+    //调用walk函数，0是找到pte，1是找不到就创建
+    pte_t* user_pte = walk(pagetable,i,0);
+    pte_t* kernel_pte = walk(k_pagetable,i,1);
+    //没有共享，而是直接新建，可能会影响性能
+    uint64 pa = PTE2PA(*user_pte);
+    uint64 flags = PTE_FLAGS(*user_pte) & ~PTE_U;
+    *kernel_pte = PA2PTE(pa) | flags;
+  }
+  return;
+}
+
+
 
 // check if use global kpgtbl or not
 int test_pagetable() {

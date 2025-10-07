@@ -96,7 +96,8 @@ int exec(char *path, char **argv) {
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp;          // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
-
+  //添加新映射
+  sync_pagetable(p->pagetable,p->k_pagetable,0, p->sz);
   //输出第一个进程的页表
   if(p->pid == 1){
     vmprint(p->pagetable);
